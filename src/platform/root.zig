@@ -507,6 +507,7 @@ pub const NullPlatform = struct {
                 .create_overlay_fn = createOverlay,
                 .set_overlay_frame_fn = setOverlayFrame,
                 .navigate_overlay_fn = navigateOverlay,
+                .set_overlay_zoom_fn = setOverlayZoom,
                 .close_overlay_fn = closeOverlay,
                 .configure_security_policy_fn = configureSecurityPolicy,
                 .emit_window_event_fn = emitWindowEvent,
@@ -656,6 +657,13 @@ pub const NullPlatform = struct {
         overlay.url = overlay.url_storage[0..url.len];
     }
 
+    fn setOverlayZoom(context: ?*anyopaque, window_id: WindowId, label: []const u8, zoom: f64) anyerror!void {
+        const self: *NullPlatform = @ptrCast(@alignCast(context.?));
+        const index = self.findOverlayIndex(window_id, label) orelse return error.OverlayNotFound;
+        if (zoom < 0.25 or zoom > 5.0) return error.InvalidOverlayOptions;
+        self.overlays[index].zoom = zoom;
+    }
+
     fn closeOverlay(context: ?*anyopaque, window_id: WindowId, label: []const u8) anyerror!void {
         const self: *NullPlatform = @ptrCast(@alignCast(context.?));
         const index = self.findOverlayIndex(window_id, label) orelse return error.OverlayNotFound;
@@ -722,6 +730,7 @@ const NullOverlay = struct {
     label: []const u8 = "",
     url: []const u8 = "",
     frame: geometry.RectF = geometry.RectF.init(0, 0, 0, 0),
+    zoom: f64 = 1.0,
     open: bool = false,
     label_storage: [max_overlay_label_bytes]u8 = undefined,
     url_storage: [max_overlay_url_bytes]u8 = undefined,

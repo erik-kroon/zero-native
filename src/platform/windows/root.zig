@@ -56,6 +56,7 @@ extern fn zero_native_windows_close_window(host: *WindowsHost, window_id: u64) c
 extern fn zero_native_windows_create_overlay(host: *WindowsHost, window_id: u64, label: [*]const u8, label_len: usize, url: [*]const u8, url_len: usize, x: f64, y: f64, width: f64, height: f64) c_int;
 extern fn zero_native_windows_set_overlay_frame(host: *WindowsHost, window_id: u64, label: [*]const u8, label_len: usize, x: f64, y: f64, width: f64, height: f64) c_int;
 extern fn zero_native_windows_navigate_overlay(host: *WindowsHost, window_id: u64, label: [*]const u8, label_len: usize, url: [*]const u8, url_len: usize) c_int;
+extern fn zero_native_windows_set_overlay_zoom(host: *WindowsHost, window_id: u64, label: [*]const u8, label_len: usize, zoom: f64) c_int;
 extern fn zero_native_windows_close_overlay(host: *WindowsHost, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern fn zero_native_windows_clipboard_read(host: *WindowsHost, buffer: [*]u8, buffer_len: usize) usize;
 extern fn zero_native_windows_clipboard_write(host: *WindowsHost, text: [*]const u8, text_len: usize) void;
@@ -116,6 +117,7 @@ pub const WindowsPlatform = struct {
                 .create_overlay_fn = createOverlay,
                 .set_overlay_frame_fn = setOverlayFrame,
                 .navigate_overlay_fn = navigateOverlay,
+                .set_overlay_zoom_fn = setOverlayZoom,
                 .close_overlay_fn = closeOverlay,
                 .configure_security_policy_fn = configureSecurityPolicy,
                 .emit_window_event_fn = emitWindowEvent,
@@ -298,6 +300,11 @@ fn setOverlayFrame(context: ?*anyopaque, window_id: platform_mod.WindowId, label
 fn navigateOverlay(context: ?*anyopaque, window_id: platform_mod.WindowId, label: []const u8, url: []const u8) anyerror!void {
     const self: *WindowsPlatform = @ptrCast(@alignCast(context.?));
     if (zero_native_windows_navigate_overlay(self.host, window_id, label.ptr, label.len, url.ptr, url.len) == 0) return error.OverlayNotFound;
+}
+
+fn setOverlayZoom(context: ?*anyopaque, window_id: platform_mod.WindowId, label: []const u8, zoom: f64) anyerror!void {
+    const self: *WindowsPlatform = @ptrCast(@alignCast(context.?));
+    if (zero_native_windows_set_overlay_zoom(self.host, window_id, label.ptr, label.len, zoom) == 0) return error.OverlayNotFound;
 }
 
 fn closeOverlay(context: ?*anyopaque, window_id: platform_mod.WindowId, label: []const u8) anyerror!void {

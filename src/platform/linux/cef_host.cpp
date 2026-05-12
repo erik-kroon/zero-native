@@ -299,6 +299,15 @@ int zero_native_gtk_navigate_overlay(Host *host, uint64_t window_id, const char 
     return 0;
 }
 
+int zero_native_gtk_set_overlay_zoom(Host *host, uint64_t window_id, const char *label, size_t label_len, double zoom) {
+    (void)host;
+    (void)window_id;
+    (void)label;
+    (void)label_len;
+    (void)zoom;
+    return 0;
+}
+
 int zero_native_gtk_close_overlay(Host *host, uint64_t window_id, const char *label, size_t label_len) {
     (void)host;
     (void)window_id;

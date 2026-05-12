@@ -12,6 +12,7 @@
             .{ .name = "zero-native.overlay.create", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
             .{ .name = "zero-native.overlay.setFrame", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
             .{ .name = "zero-native.overlay.navigate", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
+            .{ .name = "zero-native.overlay.setZoom", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
             .{ .name = "zero-native.overlay.close", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
         },
     },

@@ -58,7 +58,7 @@ export interface ZeroNativeWebViewInfo {
 export interface ZeroNativeCreateWebViewOptions {
   /** Stable label for this overlay WebView. Defaults to "overlay". Unique per parent window. */
   label?: string;
-  /** Parent native window id. Defaults to the window that calls the command. */
+  /** Parent native window id. Defaults to the caller and must match the window that calls the command when provided. */
   windowId?: number;
   /** Target URL. Its origin must be listed in the runtime navigation policy. */
   url: string;
@@ -68,24 +68,36 @@ export interface ZeroNativeCreateWebViewOptions {
 
 export interface ZeroNativeSetWebViewFrameOptions {
   label?: string;
+  /** Defaults to the caller and must match the window that calls the command when provided. */
   windowId?: number;
   frame: ZeroNativeRect;
 }
 
 export interface ZeroNativeNavigateWebViewOptions {
   label?: string;
+  /** Defaults to the caller and must match the window that calls the command when provided. */
   windowId?: number;
   url: string;
 }
 
+export interface ZeroNativeSetWebViewZoomOptions {
+  label?: string;
+  /** Defaults to the caller and must match the window that calls the command when provided. */
+  windowId?: number;
+  /** Page zoom factor. Valid range: 0.25 to 5.0. */
+  zoom: number;
+}
+
 export interface ZeroNativeCloseWebViewOptions {
   label?: string;
+  /** Defaults to the caller and must match the window that calls the command when provided. */
   windowId?: number;
 }
 
 export interface ZeroNativeWebViewHandle extends ZeroNativeWebViewInfo {
   setFrame(frame: ZeroNativeRect): Promise<ZeroNativeWebViewInfo>;
   navigate(url: string): Promise<ZeroNativeWebViewInfo>;
+  setZoom(zoom: number): Promise<ZeroNativeWebViewInfo>;
   close(): Promise<ZeroNativeWebViewInfo>;
 }
 
@@ -127,6 +139,7 @@ export interface ZeroNativeApi {
     create(options: ZeroNativeCreateWebViewOptions): Promise<ZeroNativeWebViewHandle>;
     setFrame(options: ZeroNativeSetWebViewFrameOptions): Promise<ZeroNativeWebViewInfo>;
     navigate(options: ZeroNativeNavigateWebViewOptions): Promise<ZeroNativeWebViewInfo>;
+    setZoom(options: ZeroNativeSetWebViewZoomOptions): Promise<ZeroNativeWebViewInfo>;
     close(options?: ZeroNativeCloseWebViewOptions): Promise<ZeroNativeWebViewInfo>;
   };
   dialogs: {

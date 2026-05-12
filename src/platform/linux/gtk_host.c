@@ -274,7 +274,7 @@ static const char *zero_native_bridge_script(void) {
         "function createPayload(options){options=options||{};ensureString(options.url,'url');return framePayload(options);}"
         "function navigatePayload(options){options=options||{};validateOverlaySelector(options);ensureString(options.url,'url');return {label:options.label,windowId:options.windowId,url:options.url};}"
         "function closePayload(options){options=options||{};validateOverlaySelector(options);return {label:options.label,windowId:options.windowId};}"
-        "function webviewHandle(info){return Object.freeze({label:info.label,windowId:info.windowId,setFrame:function(frame){return webviews.setFrame({label:info.label,windowId:info.windowId,frame:frame});},navigate:function(url){return webviews.navigate({label:info.label,windowId:info.windowId,url:url});},close:function(){return webviews.close({label:info.label,windowId:info.windowId});}});}"
+        "function webviewHandle(info){return Object.freeze({label:info.label,windowId:info.windowId,setFrame:function(frame){return webviews.setFrame({label:info.label,windowId:info.windowId,frame:frame});},navigate:function(url){return webviews.navigate({label:info.label,windowId:info.windowId,url:url});},setZoom:function(zoom){return webviews.setZoom({label:info.label,windowId:info.windowId,zoom:zoom});},close:function(){return webviews.close({label:info.label,windowId:info.windowId});}});}"
         "function on(name,callback){if(typeof callback!=='function'){throw new TypeError('callback must be a function');}var set=listeners.get(name);if(!set){set=new Set();listeners.set(name,set);}set.add(callback);return function(){off(name,callback);};}"
         "function off(name,callback){var set=listeners.get(name);if(set){set.delete(callback);if(set.size===0){listeners.delete(name);}}}"
         "function emit(name,detail){var set=listeners.get(name);if(set){Array.from(set).forEach(function(callback){callback(detail);});}window.dispatchEvent(new CustomEvent('zero-native:'+name,{detail:detail}));}"
@@ -289,10 +289,12 @@ static const char *zero_native_bridge_script(void) {
         "saveFile:function(options){return invoke('zero-native.dialog.saveFile',options||{});},"
         "showMessage:function(options){return invoke('zero-native.dialog.showMessage',options||{});}"
         "});"
+        "function zoomPayload(options){options=options||{};validateOverlaySelector(options);return {label:options.label,windowId:options.windowId,zoom:ensureNumber(options.zoom,'zoom')};}"
         "var webviews=Object.freeze({"
         "create:function(options){return invoke('zero-native.overlay.create',createPayload(options)).then(webviewHandle);},"
         "setFrame:function(options){return invoke('zero-native.overlay.setFrame',framePayload(options));},"
         "navigate:function(options){return invoke('zero-native.overlay.navigate',navigatePayload(options));},"
+        "setZoom:function(options){return invoke('zero-native.overlay.setZoom',zoomPayload(options));},"
         "close:function(options){return invoke('zero-native.overlay.close',closePayload(options));}"
         "});"
         "Object.defineProperty(window,'zero',{value:Object.freeze({invoke:invoke,on:on,off:off,windows:windows,dialogs:dialogs,webviews:webviews,_complete:complete,_emit:emit}),configurable:false});"
@@ -983,6 +985,16 @@ int zero_native_gtk_navigate_overlay(zero_native_gtk_host_t *host, uint64_t wind
     webkit_web_view_load_uri(overlay->web_view, url_copy);
     free(label_copy);
     free(url_copy);
+    return 1;
+}
+
+int zero_native_gtk_set_overlay_zoom(zero_native_gtk_host_t *host, uint64_t window_id, const char *label, size_t label_len, double zoom) {
+    zero_native_gtk_window_t *win = zero_native_find_window(host, window_id);
+    char *label_copy = label_len > 0 ? zero_native_strndup(label, label_len) : NULL;
+    zero_native_gtk_overlay_t *overlay = zero_native_find_overlay(win, label_copy);
+    free(label_copy);
+    if (!overlay || !overlay->web_view || zoom < 0.25 || zoom > 5.0) return 0;
+    webkit_web_view_set_zoom_level(overlay->web_view, zoom);
     return 1;
 }
 

@@ -65,6 +65,11 @@ Window commands are available through `window.zero.windows.*` when `js_window_ap
       <td>Navigate an overlay WebView</td>
     </tr>
     <tr>
+      <td><code>zero-native.overlay.setZoom</code></td>
+      <td><code>window</code></td>
+      <td>Set overlay page zoom from <code>0.25</code> to <code>5.0</code></td>
+    </tr>
+    <tr>
       <td><code>zero-native.overlay.close</code></td>
       <td><code>window</code></td>
       <td>Close an overlay WebView</td>
@@ -74,7 +79,7 @@ Window commands are available through `window.zero.windows.*` when `js_window_ap
 
 Overlay commands are available through `window.zero.webviews.*` when `js_window_api` is `true`. They use the same origin and `window` permission checks as window commands. Overlay URLs are also checked against `security.navigation.allowed_origins`.
 
-If `windowId` is omitted, the runtime uses the window that sent the bridge message. Overlay pages are isolated by default and do not receive `window.zero`.
+If `windowId` is omitted, the runtime uses the window that sent the bridge message. If provided, `windowId` must match that same calling window. Overlay pages are isolated by default and do not receive `window.zero`.
 
 ## Dialog commands
 
@@ -120,6 +125,7 @@ const app_permissions = [_][]const u8{zero_native.security.permission_window};
         .{ .name = "zero-native.overlay.create", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
         .{ .name = "zero-native.overlay.setFrame", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
         .{ .name = "zero-native.overlay.navigate", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
+        .{ .name = "zero-native.overlay.setZoom", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
         .{ .name = "zero-native.overlay.close", .permissions = .{ "window" }, .origins = .{ "zero://app" } },
         .{ .name = "zero-native.dialog.openFile", .origins = .{ "zero://app" } },
         .{ .name = "zero-native.dialog.showMessage", .origins = .{ "zero://app" } },
@@ -130,7 +136,7 @@ const app_permissions = [_][]const u8{zero_native.security.permission_window};
 ## JavaScript usage
 
 ```javascript
-const win = await window.zero.windows.create({
+await window.zero.windows.create({
   label: "tools",
   title: "Tools",
   width: 420,
@@ -139,11 +145,11 @@ const win = await window.zero.windows.create({
 
 const preview = await window.zero.webviews.create({
   label: "preview",
-  windowId: win.id,
   url: "https://example.com",
   frame: { x: 24, y: 24, width: 480, height: 320 },
 });
 
+await preview.setZoom(1.25);
 await preview.close();
 
 const files = await window.zero.invoke("zero-native.dialog.openFile", {

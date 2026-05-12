@@ -69,6 +69,7 @@ struct Overlay {
     double y = 0;
     double width = 0;
     double height = 0;
+    double zoom = 1.0;
 #if ZERO_NATIVE_HAS_WEBVIEW2
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2> webview;
@@ -214,6 +215,17 @@ static void destroyOverlaysForWindow(Host *host, uint64_t window_id) {
     }
 }
 
+static void destroyAllWindows(Host *host) {
+    if (!host) return;
+    for (auto &entry : host->windows) {
+        destroyOverlaysForWindow(host, entry.first);
+        if (entry.second.hwnd) {
+            DestroyWindow(entry.second.hwnd);
+            entry.second.hwnd = nullptr;
+        }
+    }
+}
+
 #if ZERO_NATIVE_HAS_WEBVIEW2
 using CreateEnvironmentFn = HRESULT (STDAPICALLTYPE *)(PCWSTR, PCWSTR, ICoreWebView2EnvironmentOptions *, ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler *);
 
@@ -253,6 +265,7 @@ static bool createOverlayWebView(Host *host, const std::string &key) {
                     controller->get_CoreWebView2(&found->second.webview);
                     RECT bounds = overlayRect(found->second);
                     controller->put_Bounds(bounds);
+                    controller->put_ZoomFactor(found->second.zoom);
                     controller->put_IsVisible(TRUE);
                     if (found->second.webview) {
                         EventRegistrationToken token = {};
@@ -397,6 +410,7 @@ Host *zero_native_windows_create(const char *app_name, size_t app_name_len, cons
 
 void zero_native_windows_destroy(Host *host) {
     if (!host) return;
+    destroyAllWindows(host);
     delete host;
 }
 
@@ -611,6 +625,27 @@ int zero_native_windows_navigate_overlay(Host *host, uint64_t window_id, const c
         std::wstring target = widen(found->second.url);
         found->second.webview->Navigate(target.c_str());
         return 1;
+    }
+    // WebView2 initializes asynchronously; keep the newest URL and apply it in the creation callback.
+    return 1;
+#endif
+}
+
+int zero_native_windows_set_overlay_zoom(Host *host, uint64_t window_id, const char *label, size_t label_len, double zoom) {
+#if !ZERO_NATIVE_HAS_WEBVIEW2
+    (void)host;
+    (void)window_id;
+    (void)label;
+    (void)label_len;
+    (void)zoom;
+    return 0;
+#else
+    if (!host || label_len == 0 || zoom < 0.25 || zoom > 5.0) return 0;
+    auto found = host->overlays.find(overlayKey(window_id, slice(label, label_len)));
+    if (found == host->overlays.end() || !found->second.hwnd) return 0;
+    found->second.zoom = zoom;
+    if (found->second.controller) {
+        found->second.controller->put_ZoomFactor(zoom);
     }
     return 1;
 #endif

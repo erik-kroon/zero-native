@@ -1011,6 +1011,7 @@ fn builtinBridgeErrorMessage(err: anyerror) []const u8 {
         error.CreateFailed => "Native view creation failed",
         error.MissingOverlayUrl => "WebView URL is missing",
         error.InvalidOverlayWindowId => "windowId must be a non-negative integer",
+        error.CrossWindowOverlayDenied => "Overlay windowId must match the calling window",
         error.InvalidOverlayOptions => "WebView options are invalid",
         error.OverlayNotFound => "Overlay was not found",
         error.OverlayLimitReached => "Overlay limit reached",
@@ -1027,8 +1028,10 @@ fn builtinBridgeErrorMessage(err: anyerror) []const u8 {
 
 fn builtinBridgeErrorCode(err: anyerror) bridge.ErrorCode {
     return switch (err) {
+        error.UnsupportedService,
         error.MissingOverlayUrl,
         error.InvalidOverlayWindowId,
+        error.CrossWindowOverlayDenied,
         error.InvalidOverlayOptions,
         error.WindowNotFound,
         error.OverlayNotFound,
@@ -1037,7 +1040,7 @@ fn builtinBridgeErrorCode(err: anyerror) bridge.ErrorCode {
         error.OverlayLabelTooLarge,
         error.OverlayUrlTooLarge,
         => .invalid_request,
-        error.NavigationDenied => .permission_denied,
+        error.NavigationDenied => .invalid_request,
         else => .internal_error,
     };
 }
@@ -1048,7 +1051,9 @@ fn jsonStringField(payload: []const u8, field: []const u8, storage: *json.String
 
 fn overlayWindowIdFromJson(payload: []const u8, default_window_id: platform.WindowId) !platform.WindowId {
     if (json.fieldValue(payload, "windowId") == null) return default_window_id;
-    return jsonIntegerField(payload, "windowId") orelse error.InvalidOverlayWindowId;
+    const window_id = jsonIntegerField(payload, "windowId") orelse return error.InvalidOverlayWindowId;
+    if (window_id != default_window_id) return error.CrossWindowOverlayDenied;
+    return window_id;
 }
 
 fn overlayFrameFromJson(payload: []const u8) !geometry.RectF {
@@ -1411,7 +1416,14 @@ test "runtime handles built-in JavaScript overlay bridge commands" {
     try std.testing.expectEqualStrings("https://example.org", harness.null_platform.overlays[0].url);
 
     try harness.runtime.dispatchPlatformEvent(app_state.app(), .{ .bridge_message = .{
-        .bytes = "{\"id\":\"4\",\"command\":\"zero-native.overlay.close\",\"payload\":{\"label\":\"preview\"}}",
+        .bytes = "{\"id\":\"4\",\"command\":\"zero-native.overlay.setZoom\",\"payload\":{\"label\":\"preview\",\"zoom\":1.25}}",
+        .origin = "zero://inline",
+        .window_id = 1,
+    } });
+    try std.testing.expectEqual(@as(f64, 1.25), harness.null_platform.overlays[0].zoom);
+
+    try harness.runtime.dispatchPlatformEvent(app_state.app(), .{ .bridge_message = .{
+        .bytes = "{\"id\":\"5\",\"command\":\"zero-native.overlay.close\",\"payload\":{\"label\":\"preview\"}}",
         .origin = "zero://inline",
         .window_id = 1,
     } });
@@ -1444,6 +1456,14 @@ test "runtime defaults overlay commands to source window" {
     try std.testing.expectEqual(secondary.id, harness.null_platform.overlays[0].window_id);
     try std.testing.expectEqual(secondary.id, harness.null_platform.lastBridgeResponseWindowId());
     try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "\"windowId\":2") != null);
+
+    try harness.runtime.dispatchPlatformEvent(app_state.app(), .{ .bridge_message = .{
+        .bytes = "{\"id\":\"2\",\"command\":\"zero-native.overlay.create\",\"payload\":{\"windowId\":2,\"label\":\"cross-window\",\"url\":\"https://example.com\",\"frame\":{\"width\":300,\"height\":200}}}",
+        .origin = "zero://inline",
+        .window_id = 1,
+    } });
+    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "must match the calling window") != null);
+    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "\"invalid_request\"") != null);
 }
 
 test "runtime validates overlay bridge commands" {
@@ -1497,7 +1517,7 @@ test "runtime validates overlay bridge commands" {
         .origin = "zero://inline",
         .window_id = 1,
     } });
-    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "Window was not found") != null);
+    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "must match the calling window") != null);
     try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "\"invalid_request\"") != null);
 
     try harness.runtime.dispatchPlatformEvent(app_state.app(), .{ .bridge_message = .{
@@ -1543,8 +1563,17 @@ test "runtime validates overlay bridge commands" {
         .origin = "zero://inline",
         .window_id = 1,
     } });
-    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "\"permission_denied\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "\"invalid_request\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "navigation policy") != null);
+
+    harness.runtime.options.platform.services.set_overlay_zoom_fn = null;
+    try harness.runtime.dispatchPlatformEvent(app_state.app(), .{ .bridge_message = .{
+        .bytes = "{\"id\":\"unsupported-zoom\",\"command\":\"zero-native.overlay.setZoom\",\"payload\":{\"label\":\"preview\",\"zoom\":1.25}}",
+        .origin = "zero://inline",
+        .window_id = 1,
+    } });
+    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "not available on this platform") != null);
+    try std.testing.expect(std.mem.indexOf(u8, harness.null_platform.lastBridgeResponse(), "\"invalid_request\"") != null);
 
     try harness.runtime.dispatchPlatformEvent(app_state.app(), .{ .bridge_message = .{
         .bytes = "{\"id\":\"escaped\",\"command\":\"zero-native.overlay.create\",\"payload\":{\"label\":\"preview \\\"quoted\\\"\",\"url\":\"https://example.com\",\"frame\":{\"width\":300,\"height\":200}}}",

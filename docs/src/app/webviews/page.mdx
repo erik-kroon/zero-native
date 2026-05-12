@@ -21,21 +21,21 @@ Then create and manage an overlay from JavaScript:
 ```javascript
 const preview = await window.zero.webviews.create({
   label: "preview",
-  windowId: 1,
   url: "https://example.com",
   frame: { x: 24, y: 24, width: 480, height: 320 },
 });
 
 await preview.setFrame({ x: 32, y: 32, width: 640, height: 420 });
 await preview.navigate("https://example.com/docs");
+await preview.setZoom(1.25);
 await preview.close();
 ```
 
 Coordinates are logical content coordinates relative to the parent window: `x: 0, y: 0` is the top-left corner of the window content area.
 
-`windowId` defaults to the window that calls the command. Pass the `id` returned by `window.zero.windows.create()` when one window should create or manage an overlay in another window.
+`windowId` defaults to the window that calls the command. If you pass it explicitly, it must match the calling window; one window cannot manage another window's overlays.
 
-You can also enable the same helpers with an explicit `builtin_bridge` policy instead of `js_window_api`. In that mode, list every overlay command your app calls: `zero-native.overlay.create`, `zero-native.overlay.setFrame`, `zero-native.overlay.navigate`, and `zero-native.overlay.close`.
+You can also enable the same helpers with an explicit `builtin_bridge` policy instead of `js_window_api`. In that mode, list every overlay command your app calls: `zero-native.overlay.create`, `zero-native.overlay.setFrame`, `zero-native.overlay.navigate`, `zero-native.overlay.setZoom`, and `zero-native.overlay.close`.
 
 ## Lifecycle
 
@@ -59,22 +59,27 @@ The helper calls these built-in bridge commands internally:
   </thead>
   <tbody>
     <tr>
-      <td><code>window.zero.webviews.create()</code></td>
+      <td><code>window.zero.webviews.create(options)</code> / <code>preview</code></td>
       <td><code>zero-native.overlay.create</code></td>
       <td>Create an overlay WebView in a parent window</td>
     </tr>
     <tr>
-      <td><code>window.zero.webviews.setFrame()</code></td>
+      <td><code>window.zero.webviews.setFrame(options)</code> / <code>preview.setFrame(frame)</code></td>
       <td><code>zero-native.overlay.setFrame</code></td>
       <td>Move or resize an overlay</td>
     </tr>
     <tr>
-      <td><code>window.zero.webviews.navigate()</code></td>
+      <td><code>window.zero.webviews.navigate(options)</code> / <code>preview.navigate(url)</code></td>
       <td><code>zero-native.overlay.navigate</code></td>
       <td>Navigate an overlay to a new URL</td>
     </tr>
     <tr>
-      <td><code>window.zero.webviews.close()</code></td>
+      <td><code>window.zero.webviews.setZoom(options)</code> / <code>preview.setZoom(zoom)</code></td>
+      <td><code>zero-native.overlay.setZoom</code></td>
+      <td>Set overlay page zoom from <code>0.25</code> to <code>5.0</code></td>
+    </tr>
+    <tr>
+      <td><code>window.zero.webviews.close(options)</code> / <code>preview.close()</code></td>
       <td><code>zero-native.overlay.close</code></td>
       <td>Close an overlay</td>
     </tr>
@@ -85,4 +90,4 @@ Overlay URLs are checked against the runtime navigation policy before native vie
 
 ## Backend Support
 
-System WebView overlays are implemented on macOS and Linux. Windows overlays require WebView2; if WebView2 is unavailable, creating an overlay fails instead of showing a placeholder. Chromium/CEF overlay support is available on macOS; the Linux CEF host currently fails overlay creation until a real native CEF overlay implementation is wired in.
+System WebView overlays are implemented on macOS and Linux, including page zoom. Windows overlays require WebView2; if WebView2 is unavailable, creating an overlay fails instead of showing a placeholder. Chromium/CEF overlay support is available on macOS, including page zoom. The Linux CEF host currently fails overlay creation until a real native CEF overlay implementation is wired in.

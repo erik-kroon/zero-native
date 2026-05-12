@@ -17,6 +17,7 @@
 #include "include/cef_process_message.h"
 #include "include/cef_v8.h"
 #include "include/wrapper/cef_library_loader.h"
+#include <math.h>
 #include <map>
 
 #ifndef ZERO_NATIVE_CEF_DIR
@@ -278,7 +279,7 @@ static const char *ZeroNativeCefBridgeScript() {
         "function createPayload(options){options=options||{};ensureString(options.url,'url');return framePayload(options);}"
         "function navigatePayload(options){options=options||{};validateOverlaySelector(options);ensureString(options.url,'url');return {label:options.label,windowId:options.windowId,url:options.url};}"
         "function closePayload(options){options=options||{};validateOverlaySelector(options);return {label:options.label,windowId:options.windowId};}"
-        "function webviewHandle(info){return Object.freeze({label:info.label,windowId:info.windowId,setFrame:function(frame){return webviews.setFrame({label:info.label,windowId:info.windowId,frame:frame});},navigate:function(url){return webviews.navigate({label:info.label,windowId:info.windowId,url:url});},close:function(){return webviews.close({label:info.label,windowId:info.windowId});}});}"
+        "function webviewHandle(info){return Object.freeze({label:info.label,windowId:info.windowId,setFrame:function(frame){return webviews.setFrame({label:info.label,windowId:info.windowId,frame:frame});},navigate:function(url){return webviews.navigate({label:info.label,windowId:info.windowId,url:url});},setZoom:function(zoom){return webviews.setZoom({label:info.label,windowId:info.windowId,zoom:zoom});},close:function(){return webviews.close({label:info.label,windowId:info.windowId});}});}"
         "function on(name,callback){if(typeof callback!=='function'){throw new TypeError('callback must be a function');}var set=listeners.get(name);if(!set){set=new Set();listeners.set(name,set);}set.add(callback);return function(){off(name,callback);};}"
         "function off(name,callback){var set=listeners.get(name);if(set){set.delete(callback);if(set.size===0){listeners.delete(name);}}}"
         "function emit(name,detail){var set=listeners.get(name);if(set){Array.from(set).forEach(function(callback){callback(detail);});}window.dispatchEvent(new CustomEvent('zero-native:'+name,{detail:detail}));}"
@@ -293,10 +294,12 @@ static const char *ZeroNativeCefBridgeScript() {
         "saveFile:function(options){return invoke('zero-native.dialog.saveFile',options||{});},"
         "showMessage:function(options){return invoke('zero-native.dialog.showMessage',options||{});}"
         "});"
+        "function zoomPayload(options){options=options||{};validateOverlaySelector(options);return {label:options.label,windowId:options.windowId,zoom:ensureNumber(options.zoom,'zoom')};}"
         "var webviews=Object.freeze({"
         "create:function(options){return invoke('zero-native.overlay.create',createPayload(options)).then(webviewHandle);},"
         "setFrame:function(options){return invoke('zero-native.overlay.setFrame',framePayload(options));},"
         "navigate:function(options){return invoke('zero-native.overlay.navigate',navigatePayload(options));},"
+        "setZoom:function(options){return invoke('zero-native.overlay.setZoom',zoomPayload(options));},"
         "close:function(options){return invoke('zero-native.overlay.close',closePayload(options));}"
         "});"
         "Object.defineProperty(window,'zero',{value:Object.freeze({invoke:invoke,on:on,off:off,windows:windows,dialogs:dialogs,webviews:webviews,_complete:complete,_emit:emit}),configurable:false});"
@@ -340,6 +343,7 @@ static const char *ZeroNativeCefBridgeScript() {
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, NSString *> *fallbackURLs;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSView *> *overlayViews;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *overlayPendingURLs;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *overlayPendingZooms;
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, strong) NSString *appName;
 @property(nonatomic, assign) zero_native_appkit_event_callback_t callback;
@@ -383,6 +387,7 @@ static const char *ZeroNativeCefBridgeScript() {
 - (BOOL)createOverlayInWindow:(uint64_t)windowId label:(NSString *)label url:(NSString *)url x:(double)x y:(double)y width:(double)width height:(double)height;
 - (BOOL)setOverlayFrameInWindow:(uint64_t)windowId label:(NSString *)label x:(double)x y:(double)y width:(double)width height:(double)height;
 - (BOOL)navigateOverlayInWindow:(uint64_t)windowId label:(NSString *)label url:(NSString *)url;
+- (BOOL)setOverlayZoomInWindow:(uint64_t)windowId label:(NSString *)label zoom:(double)zoom;
 - (BOOL)closeOverlayInWindow:(uint64_t)windowId label:(NSString *)label;
 - (void)closeOverlaysInWindow:(uint64_t)windowId;
 - (void)setBrowser:(CefRefPtr<CefBrowser>)browser windowId:(uint64_t)windowId;
@@ -456,6 +461,7 @@ static const char *ZeroNativeCefBridgeScript() {
     self.fallbackURLs = [[NSMutableDictionary alloc] init];
     self.overlayViews = [[NSMutableDictionary alloc] init];
     self.overlayPendingURLs = [[NSMutableDictionary alloc] init];
+    self.overlayPendingZooms = [[NSMutableDictionary alloc] init];
     self.cefClients = new std::map<uint64_t, CefRefPtr<ZeroNativeCefClient>>();
     self.browsers = new std::map<uint64_t, CefRefPtr<CefBrowser>>();
     self.overlayCefClients = new std::map<std::string, CefRefPtr<ZeroNativeCefClient>>();
@@ -852,6 +858,24 @@ static const char *ZeroNativeCefBridgeScript() {
     return YES;
 }
 
+- (BOOL)setOverlayZoomInWindow:(uint64_t)windowId label:(NSString *)label zoom:(double)zoom {
+    if (label.length == 0 || zoom < 0.25 || zoom > 5.0) return NO;
+    NSString *key = [self overlayKeyForWindow:windowId label:label];
+    if (!self.overlayViews[key]) return NO;
+    const double zoomLevel = log(zoom) / log(1.2);
+    std::string keyString(key.UTF8String);
+    if (self.overlayBrowsers) {
+        auto it = self.overlayBrowsers->find(keyString);
+        if (it != self.overlayBrowsers->end() && it->second) {
+            it->second->GetHost()->SetZoomLevel(zoomLevel);
+            [self.overlayPendingZooms removeObjectForKey:key];
+            return YES;
+        }
+    }
+    self.overlayPendingZooms[key] = @(zoom);
+    return YES;
+}
+
 - (BOOL)closeOverlayInWindow:(uint64_t)windowId label:(NSString *)label {
     NSString *key = [self overlayKeyForWindow:windowId label:label];
     NSView *overlay = self.overlayViews[key];
@@ -865,6 +889,7 @@ static const char *ZeroNativeCefBridgeScript() {
         self.overlayBrowsers->erase(keyString);
     }
     [self.overlayPendingURLs removeObjectForKey:key];
+    [self.overlayPendingZooms removeObjectForKey:key];
     if (self.overlayCefClients) self.overlayCefClients->erase(keyString);
     [overlay removeFromSuperview];
     [self.overlayViews removeObjectForKey:key];
@@ -932,6 +957,11 @@ static const char *ZeroNativeCefBridgeScript() {
     if (pendingURL.length > 0 && browser) {
         browser->GetMainFrame()->LoadURL(std::string(pendingURL.UTF8String));
         [self.overlayPendingURLs removeObjectForKey:key];
+    }
+    NSNumber *pendingZoom = self.overlayPendingZooms[key];
+    if (pendingZoom && browser) {
+        browser->GetHost()->SetZoomLevel(log(pendingZoom.doubleValue) / log(1.2));
+        [self.overlayPendingZooms removeObjectForKey:key];
     }
 }
 
@@ -1204,6 +1234,12 @@ int zero_native_appkit_navigate_overlay(zero_native_appkit_host_t *host, uint64_
     NSString *labelString = label ? [[NSString alloc] initWithBytes:label length:label_len encoding:NSUTF8StringEncoding] : @"";
     NSString *urlString = url ? [[NSString alloc] initWithBytes:url length:url_len encoding:NSUTF8StringEncoding] : @"";
     return [object navigateOverlayInWindow:window_id label:labelString ?: @"" url:urlString ?: @""] ? 1 : 0;
+}
+
+int zero_native_appkit_set_overlay_zoom(zero_native_appkit_host_t *host, uint64_t window_id, const char *label, size_t label_len, double zoom) {
+    ZeroNativeChromiumHost *object = (__bridge ZeroNativeChromiumHost *)host;
+    NSString *labelString = label ? [[NSString alloc] initWithBytes:label length:label_len encoding:NSUTF8StringEncoding] : @"";
+    return [object setOverlayZoomInWindow:window_id label:labelString ?: @"" zoom:zoom] ? 1 : 0;
 }
 
 int zero_native_appkit_close_overlay(zero_native_appkit_host_t *host, uint64_t window_id, const char *label, size_t label_len) {

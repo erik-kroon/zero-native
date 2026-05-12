@@ -214,7 +214,10 @@ async function closeOverlay() {
   if (!overlay) return;
   try {
     await overlay.close();
-  } catch (_) {}
+  } catch (error) {
+    console.error("Failed to close page WebView", error);
+    setStatus(error && error.message ? error.message : "Failed to close page WebView", 3000);
+  }
   overlay = null;
 }
 
@@ -385,7 +388,10 @@ async function applyZoom(level) {
     await overlay.setZoom(zoomLevel);
     var pct = Math.round(zoomLevel * 100);
     setStatus(pct + "%", 1200);
-  } catch (_) {}
+  } catch (error) {
+    console.error("Failed to zoom page WebView", error);
+    setStatus(error && error.message ? error.message : "Failed to zoom page WebView", 3000);
+  }
 }
 
 window.addEventListener("keydown", function (event) {
