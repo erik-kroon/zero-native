@@ -100,6 +100,7 @@ static BOOL ZeroNativePolicyListMatches(NSArray<NSString *> *values, NSURL *url)
 - (void)emitEvent:(zero_native_appkit_event_t)event;
 - (void)emitResize;
 - (void)emitResizeForWindowId:(uint64_t)windowId;
+- (void)emitDeferredResizeForWindowId:(uint64_t)windowId;
 - (void)emitWindowFrame:(BOOL)open;
 - (void)emitWindowFrameForWindowId:(uint64_t)windowId open:(BOOL)open;
 - (void)scheduleFrame;
@@ -126,6 +127,7 @@ static BOOL ZeroNativePolicyListMatches(NSArray<NSString *> *values, NSURL *url)
     (void)notification;
     [self.host emitWindowFrameForWindowId:self.windowId open:YES];
     [self.host emitResizeForWindowId:self.windowId];
+    [self.host emitDeferredResizeForWindowId:self.windowId];
     [self.host scheduleFrame];
 }
 
@@ -138,6 +140,8 @@ static BOOL ZeroNativePolicyListMatches(NSArray<NSString *> *values, NSURL *url)
 - (void)windowDidBecomeKey:(NSNotification *)notification {
     (void)notification;
     [self.host emitWindowFrameForWindowId:self.windowId open:YES];
+    [self.host emitResizeForWindowId:self.windowId];
+    [self.host emitDeferredResizeForWindowId:self.windowId];
     [self.host scheduleFrame];
 }
 
@@ -988,6 +992,17 @@ static NSURL *ZeroNativeAssetEntryURL(NSString *origin, NSString *entryPath) {
     }];
 }
 
+- (void)emitDeferredResizeForWindowId:(uint64_t)windowId {
+    __weak ZeroNativeAppKitHost *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        ZeroNativeAppKitHost *strongSelf = weakSelf;
+        if (!strongSelf || !strongSelf.windows[@(windowId)]) return;
+        [strongSelf emitWindowFrameForWindowId:windowId open:YES];
+        [strongSelf emitResizeForWindowId:windowId];
+        [strongSelf scheduleFrame];
+    });
+}
+
 - (void)emitWindowFrame:(BOOL)open {
     [self emitWindowFrameForWindowId:1 open:open];
 }
@@ -1236,6 +1251,8 @@ static NSURL *ZeroNativeAssetEntryURL(NSString *origin, NSString *entryPath) {
         command = @"zoom-out";
     } else if ([key isEqualToString:@"0"]) {
         command = @"zoom-reset";
+    } else if ([key isEqualToString:@"r"]) {
+        command = @"reload";
     } else {
         return NO;
     }

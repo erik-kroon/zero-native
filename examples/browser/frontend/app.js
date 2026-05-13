@@ -24,6 +24,8 @@ var navHistory = [];
 var historyIndex = -1;
 var visitedUrls = [];
 var resizeHandle = 0;
+var resizeInFlight = false;
+var resizeRequested = false;
 var viewportPollHandle = 0;
 var isLoading = false;
 var statusTimer = null;
@@ -39,6 +41,8 @@ var browserViewport = {
   width: Math.max(1, Math.floor(window.innerWidth)),
   height: Math.max(1, Math.floor(window.innerHeight)),
 };
+var browserViewportRevision = 0;
+var lastNativeResizeAt = 0;
 var nativeViewportInset = null;
 
 function setStatus(message, autohide) {
@@ -131,6 +135,7 @@ function updateBrowserViewport(width, height) {
   var nextHeight = Math.max(1, Math.floor(height));
   if (browserViewport.width === nextWidth && browserViewport.height === nextHeight) return false;
   browserViewport = { width: nextWidth, height: nextHeight };
+  browserViewportRevision++;
   return true;
 }
 
@@ -143,9 +148,12 @@ function mainWindowInfo(windows) {
 }
 
 async function syncBrowserViewport() {
+  if (lastNativeResizeAt && Date.now() - lastNativeResizeAt < 1000) return false;
+  var startedAtRevision = browserViewportRevision;
   try {
     var info = mainWindowInfo(await window.zero.windows.list());
     if (!info) return false;
+    if (browserViewportRevision !== startedAtRevision) return false;
     var nativeWidth = Math.max(1, Math.floor(info.width));
     var nativeHeight = Math.max(1, Math.floor(info.height));
     if (!nativeViewportInset) {
@@ -384,19 +392,38 @@ async function navigateTo(url, options) {
   }
 }
 
-function scheduleResize(syncNative) {
+async function applyResize() {
+  if (!pageWebView) return;
+  await updateChromeOverlay();
+  var frame = pageFrame();
+  await pageWebView.setFrame(frame);
+}
+
+async function flushResizeQueue() {
+  if (resizeInFlight) {
+    resizeRequested = true;
+    return;
+  }
+  resizeInFlight = true;
+  try {
+    do {
+      resizeRequested = false;
+      await applyResize();
+    } while (resizeRequested);
+  } catch (error) {
+    setStatus(error.message || "Failed to resize page WebView");
+  } finally {
+    resizeInFlight = false;
+    if (resizeRequested) flushResizeQueue();
+  }
+}
+
+function scheduleResize() {
+  resizeRequested = true;
   if (resizeHandle) cancelAnimationFrame(resizeHandle);
-  resizeHandle = requestAnimationFrame(async function () {
+  resizeHandle = requestAnimationFrame(function () {
     resizeHandle = 0;
-    if (!pageWebView) return;
-    try {
-      if (syncNative !== false) await syncBrowserViewport();
-      await updateChromeOverlay();
-      var frame = pageFrame();
-      await pageWebView.setFrame(frame);
-    } catch (error) {
-      setStatus(error.message || "Failed to resize page WebView");
-    }
+    flushResizeQueue();
   });
 }
 
@@ -410,8 +437,9 @@ function startViewportPolling() {
 
 window.zero.on("resize", function (detail) {
   if (!detail) return;
+  lastNativeResizeAt = Date.now();
   var changed = updateBrowserViewport(detail.width, detail.height);
-  if (changed) scheduleResize(false);
+  if (changed) scheduleResize();
 });
 
 window.zero.on("webview:navigate", function (detail) {
@@ -495,12 +523,16 @@ reloadButton.addEventListener("click", function () {
     setStatus("Stopped", 2000);
     return;
   }
-  navigateTo(currentUrl || addressInput.value, { record: false });
+  reloadPage();
 });
 
 errorRetry.addEventListener("click", function () {
-  navigateTo(currentUrl || addressInput.value, { record: false });
+  reloadPage();
 });
+
+function reloadPage() {
+  navigateTo(currentUrl || addressInput.value, { record: false });
+}
 
 async function applyZoom(level) {
   zoomLevel = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(level * 100) / 100));
@@ -539,10 +571,14 @@ window.zero.on("shortcut", function (detail) {
     applyZoom(zoomLevel - ZOOM_STEP);
   } else if (detail.command === "zoom-reset") {
     applyZoom(1.0);
+  } else if (detail.command === "reload") {
+    reloadPage();
   }
 });
 
-window.addEventListener("resize", scheduleResize);
+window.addEventListener("resize", function () {
+  scheduleResize();
+});
 window.addEventListener("DOMContentLoaded", function () {
   navigateTo(addressInput.value);
 });
