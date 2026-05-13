@@ -135,6 +135,7 @@ pub fn createMacosApp(allocator: std.mem.Allocator, io: std.Io, options: Package
         const executable_subpath = try std.fmt.allocPrint(allocator, "Contents/MacOS/{s}", .{executable_name});
         defer allocator.free(executable_subpath);
         try copyFileToDir(allocator, io, package_dir, binary_path, executable_subpath);
+        try makeExecutable(package_dir, io, executable_subpath);
     } else {
         try writeFile(package_dir, io, "Contents/MacOS/README.txt", "No app binary was supplied for this local package.\n");
     }
@@ -527,9 +528,18 @@ fn zonStringAlloc(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
 }
 
 fn copyFileToDir(allocator: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, source_path: []const u8, dest_subpath: []const u8) !void {
-    const bytes = try readPath(allocator, io, source_path);
-    defer allocator.free(bytes);
-    try writeFile(dir, io, dest_subpath, bytes);
+    _ = allocator;
+    try std.Io.Dir.copyFile(std.Io.Dir.cwd(), source_path, dir, dest_subpath, io, .{ .make_path = true, .replace = true });
+}
+
+fn makeExecutable(dir: std.Io.Dir, io: std.Io, subpath: []const u8) !void {
+    if (!std.Io.File.Permissions.has_executable_bit) return;
+
+    var file = try dir.openFile(io, subpath, .{});
+    defer file.close(io);
+    const current_mode = (try file.stat(io)).permissions.toMode();
+    const execute_if_readable = (current_mode & 0o444) >> 2;
+    try file.setPermissions(io, .fromMode(current_mode | execute_if_readable));
 }
 
 fn readPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
@@ -839,6 +849,56 @@ test "plist template includes identity executable and version" {
     try std.testing.expect(std.mem.indexOf(u8, plist, "icon.icns") != null);
     try std.testing.expect(std.mem.indexOf(u8, plist, "LSMinimumSystemVersion") != null);
     try std.testing.expect(std.mem.indexOf(u8, plist, "11.0") != null);
+}
+
+test "copying files preserves executable permissions" {
+    if (!std.Io.File.Permissions.has_executable_bit) return error.SkipZigTest;
+
+    var cwd = std.Io.Dir.cwd();
+    try cwd.deleteTree(std.testing.io, ".zig-cache/test-package-copy-mode");
+    try cwd.createDirPath(std.testing.io, ".zig-cache/test-package-copy-mode/dest");
+    defer cwd.deleteTree(std.testing.io, ".zig-cache/test-package-copy-mode") catch {};
+
+    const source_path = ".zig-cache/test-package-copy-mode/source-bin";
+    var source = try cwd.createFile(std.testing.io, source_path, .{ .permissions = .executable_file });
+    try source.writeStreamingAll(std.testing.io, "test binary");
+    source.close(std.testing.io);
+
+    var dest_dir = try cwd.openDir(std.testing.io, ".zig-cache/test-package-copy-mode/dest", .{});
+    defer dest_dir.close(std.testing.io);
+    try copyFileToDir(std.testing.allocator, std.testing.io, dest_dir, source_path, "Contents/MacOS/app");
+
+    var dest = try dest_dir.openFile(std.testing.io, "Contents/MacOS/app", .{});
+    defer dest.close(std.testing.io);
+    const dest_permissions = (try dest.stat(std.testing.io)).permissions;
+    try std.testing.expect((dest_permissions.toMode() & 0o111) != 0);
+}
+
+test "macOS app executable is marked executable" {
+    if (!std.Io.File.Permissions.has_executable_bit) return error.SkipZigTest;
+
+    var cwd = std.Io.Dir.cwd();
+    try cwd.deleteTree(std.testing.io, ".zig-cache/test-package-macos-mode");
+    try cwd.createDirPath(std.testing.io, ".zig-cache/test-package-macos-mode/assets");
+    defer cwd.deleteTree(std.testing.io, ".zig-cache/test-package-macos-mode") catch {};
+
+    const source_path = ".zig-cache/test-package-macos-mode/source-bin";
+    try cwd.writeFile(std.testing.io, .{ .sub_path = source_path, .data = "test binary" });
+
+    const metadata: manifest_tool.Metadata = .{ .id = "dev.example.app", .name = "mode-test", .version = "1.2.3" };
+    _ = try createMacosApp(std.testing.allocator, std.testing.io, .{
+        .metadata = metadata,
+        .output_path = ".zig-cache/test-package-macos-mode/ModeTest.app",
+        .binary_path = source_path,
+        .assets_dir = ".zig-cache/test-package-macos-mode/assets",
+    });
+
+    var app_dir = try cwd.openDir(std.testing.io, ".zig-cache/test-package-macos-mode/ModeTest.app", .{});
+    defer app_dir.close(std.testing.io);
+    var executable = try app_dir.openFile(std.testing.io, "Contents/MacOS/mode-test", .{});
+    defer executable.close(std.testing.io);
+    const permissions = (try executable.stat(std.testing.io)).permissions;
+    try std.testing.expect((permissions.toMode() & 0o111) != 0);
 }
 
 test "chromium desktop packages require a matching CEF layout" {
