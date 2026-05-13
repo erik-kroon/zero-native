@@ -8,13 +8,16 @@ All notable changes to zero-native will be documented in this file.
 
 ### New Features
 
-- **Layered WebViews**: Add first-class multi-WebView stacks with overlay positioning, routing, hover coverage, resizing, reload handling, and backend support across AppKit, CEF, GTK, and WebView2 (#28).
+- **Layered WebView runtime**: Model each native window as a stack of named WebViews, including the reserved startup `main` WebView and child WebViews with frame, layer, zoom, transparency, routing, resizing, reload, and close support across the native backends (#28).
+- **JavaScript WebView API**: Add typed `window.zero.webviews.*` helpers and `zero-native.webview.*` built-in bridge commands for create, list, setFrame, navigate, setZoom, setLayer, and close operations (#28).
+- **Isolated child WebViews**: Keep child WebViews bridge-isolated by default, allow trusted child chrome with `bridge: true`, enforce navigation policy on child URLs, and scope WebView commands to the calling native window (#28).
+- **Browser example**: Add a browser-style example that demonstrates layered WebViews, browser controls, isolated page content, frontend asset handling, and the root `zig build run-browser` command (#28).
 - **zero-native skills**: Ship CLI-served agent skills and reference material for building and automating zero-native apps (#38).
-- **Browser example**: Add a browser-style example that demonstrates layered WebViews, browser controls, and frontend asset handling (#28).
 
 ### Improvements
 
-- **WebView and bridge documentation**: Document WebView APIs, built-in bridge commands, security boundaries, packaging, testing, and app model updates (#28, #38).
+- **WebView and bridge documentation**: Document WebView APIs, built-in bridge commands, security boundaries, backend support, packaging, testing, and app model updates (#28, #38).
+- **WebView smoke coverage**: Extend automation smoke tests to exercise child WebView create, resize, navigate, and close operations for system WebView and macOS CEF builds (#28).
 - **CEF runtime builds**: Harden the CEF runtime workflows across macOS, Linux, and Windows, including Windows runtime build fixes (#25, #26).
 - **macOS compatibility**: Set the native app baseline to macOS 11 (#22).
 - **Contributor guidance**: Clarify signed commit requirements and contribution PR guidance (#10).
